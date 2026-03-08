@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobX Architecture Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #f0f6fc; }
+  .subtitle { text-align: center; color: #8b949e; margin-bottom: 40px; font-size: 14px; }
+  .tab-bar { display: flex; justify-content: center; gap: 8px; margin-bottom: 30px; }
+  .tab { padding: 8px 20px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #8b949e; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+  .tab:hover { border-color: #58a6ff; color: #58a6ff; }
+  .tab.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .diagram-container { max-width: 1100px; margin: 0 auto; }
+  .diagram { display: none; }
+  .diagram.active { display: block; }
+
+  /* Flow diagram styles */
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .row { display: flex; gap: 20px; align-items: flex-start; justify-content: center; flex-wrap: wrap; width: 100%; }
+  .box {
+    border-radius: 10px; padding: 18px 22px; min-width: 180px; max-width: 280px;
+    text-align: center; position: relative; transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .box:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+  .box h3 { font-size: 14px; margin-bottom: 6px; }
+  .box p { font-size: 11px; color: #8b949e; line-height: 1.4; }
+  .box .tag { font-size: 10px; display: inline-block; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
+
+  /* Color themes */
+  .external { background: #1c2333; border: 1px solid #2d333b; }
+  .external h3 { color: #8b949e; }
+  .ingest { background: #0d2137; border: 1px solid #1158a0; }
+  .ingest h3 { color: #58a6ff; }
+  .ingest .tag { background: #0d2137; color: #58a6ff; border: 1px solid #1158a0; }
+  .process { background: #1a1230; border: 1px solid #6e40c9; }
+  .process h3 { color: #bc8cff; }
+  .process .tag { background: #1a1230; color: #bc8cff; border: 1px solid #6e40c9; }
+  .storage { background: #0d2a1a; border: 1px solid #238636; }
+  .storage h3 { color: #3fb950; }
+  .storage .tag { background: #0d2a1a; color: #3fb950; border: 1px solid #238636; }
+  .serve { background: #2a1a0d; border: 1px solid #d29922; }
+  .serve h3 { color: #e3b341; }
+  .serve .tag { background: #2a1a0d; color: #e3b341; border: 1px solid #d29922; }
+  .future { background: #1c1c1c; border: 1px dashed #484f58; opacity: 0.7; }
+  .future h3 { color: #8b949e; }
+
+  /* Arrows */
+  .arrow { display: flex; justify-content: center; align-items: center; color: #30363d; font-size: 24px; }
+  .arrow-label { font-size: 11px; color: #8b949e; margin: 0 8px; }
+  .arrow-down::after { content: ""; display: block; width: 2px; height: 30px; background: #30363d; margin: 0 auto; }
+  .arrow-down { display: flex; flex-direction: column; align-items: center; }
+  .arrow-down .arrow-label { margin: 4px 0; }
+
+  /* Section labels */
+  .section-label {
+    width: 100%; text-align: left; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1.5px; color: #484f58;
+    margin: 16px 0 8px 0; padding-left: 8px;
+    border-left: 3px solid #30363d;
+  }
+
+  /* Data model table */
+  .model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .model-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 20px; transition: border-color 0.2s;
+  }
+  .model-card:hover { border-color: #58a6ff; }
+  .model-card h3 { color: #f0f6fc; margin-bottom: 12px; font-size: 16px; }
+  .model-card .field { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #21262d; font-size: 12px; }
+  .model-card .field:last-child { border-bottom: none; }
+  .model-card .field-name { color: #79c0ff; font-family: monospace; }
+  .model-card .field-type { color: #8b949e; font-family: monospace; }
+  .model-card .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; }
+  .badge-pk { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
+  .badge-idx { background: #23863633; color: #3fb950; border: 1px solid #23863655; }
+  .badge-vec { background: #6e40c933; color: #bc8cff; border: 1px solid #6e40c955; }
+  .badge-denorm { background: #d2992233; color: #e3b341; border: 1px solid #d2992255; }
+
+  /* Cost table */
+  .cost-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+  .cost-table th, .cost-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #21262d; font-size: 13px; }
+  .cost-table th { color: #8b949e; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+  .cost-table td { color: #c9d1d9; }
+  .cost-table tr:hover td { background: #161b22; }
+  .cost-total { font-weight: 700; color: #3fb950 !important; font-size: 15px !important; }
+  .cost-highlight { background: #0d2a1a !important; }
+
+  /* Pipeline flow */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+  .pipeline-step {
+    display: flex; align-items: center; gap: 16px; padding: 14px 20px;
+    border-left: 3px solid #30363d; margin-left: 30px; position: relative;
+  }
+  .pipeline-step::before {
+    content: attr(data-step); position: absolute; left: -42px;
+    width: 24px; height: 24px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+  }
+  .pipeline-step.fetch::before { background: #1158a0; color: #fff; }
+  .pipeline-step.map::before { background: #1158a0; color: #fff; }
+  .pipeline-step.dedupe::before { background: #6e40c9; color: #fff; }
+  .pipeline-step.stage::before { background: #6e40c9; color: #fff; }
+  .pipeline-step.persist::before { background: #238636; color: #fff; }
+  .pipeline-step.enrich::before { background: #d29922; color: #fff; }
+  .pipeline-step .step-title { font-weight: 600; font-size: 14px; min-width: 140px; }
+  .pipeline-step .step-desc { font-size: 12px; color: #8b949e; }
+  .pipeline-step .step-tech { font-size: 11px; color: #58a6ff; font-family: monospace; }
+
+  /* Legend */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin: 30px 0 20px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>JobX Architecture</h1>
+<p class="subtitle">Job Aggregation & Recommendation Engine &mdash; GCP + Firestore</p>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="showTab('arch')">Architecture</div>
+  <div class="tab" onclick="showTab('pipeline')">Ingest Pipeline</div>
+  <div class="tab" onclick="showTab('data')">Data Model</div>
+  <div class="tab" onclick="showTab('cost')">Cost Analysis</div>
+</div>
+
+<!-- ==================== ARCHITECTURE ==================== -->
+<div class="diagram-container">
+<div id="arch" class="diagram active">
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#30363d"></div> External</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1158a0"></div> Ingestion</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#6e40c9"></div> Processing</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#238636"></div> Storage</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Serving</div>
+    <div class="legend-item"><div class="legend-dot" style="border:1px dashed #484f58; background:none"></div> Future</div>
+  </div>
+
+  <div class="flow">
+
+    <div class="section-label">External Data Sources</div>
+    <div class="row">
+      <div class="box external">
+        <h3>ATS APIs</h3>
+        <p>Greenhouse, Lever, Ashby, SmartRecruiters, Eightfold, Apple, Uber, TikTok</p>
+      </div>
+      <div class="box external">
+        <h3>Cloud Scheduler</h3>
+        <p>Daily cron trigger<br>(0 6 * * *)</p>
+      </div>
+    </div>
+
+    <div class="arrow-down"><div class="arrow-label">triggers daily</div></div>
+
+    <div class="section-label">Ingestion Layer</div>
+    <div class="row">
+      <div class="box ingest">
+        <h3>Cloud Run Job</h3>
+        <p>Runs ingest script: fetch &rarr; map &rarr; dedupe &rarr; persist</p>
+        <span class="tag">run_scheduled_ingests.py</span>
+      </div>
+    </div>
+
+    <div class="arrow-down"><div class="arrow-label">publishes job IDs</div></div>
+
+    <div class="section-label">Processing & Enrichment Layer</div>
+    <div class="row">
+      <div class="box process">
+        <h3>Pub/Sub</h3>
+        <p>Topic: jobs-to-enrich<br>Async task queue</p>
+        <span class="tag">replaces Redis/Celery</span>
+      </div>
+      <div class="box process">
+        <h3>Cloud Run Service</h3>
+        <p>Enrichment Workers:<br>LLM JD parsing + embedding generation</p>
+        <span class="tag">auto-scales 0 &rarr; N</span>
+      </div>
+    </div>
+
+    <div class="arrow-down"><div class="arrow-label">writes enriched data</div></div>
+
+    <div class="section-label">Storage Layer</div>
+    <div class="row">
+      <div class="box storage">
+        <h3>Firestore</h3>
+        <p>Primary database<br>jobs, sources, syncRuns, locations<br>Native vector search (768-dim)</p>
+        <span class="tag">~$1-2/month</span>
+      </div>
+      <div class="box storage">
+        <h3>GCS Bucket</h3>
+        <p>Blob storage<br>HTML descriptions, raw JSON payloads<br>Content-addressed (SHA-256)</p>
+        <span class="tag">~$0.20/month</span>
+      </div>
+    </div>
+
+    <div class="arrow-down"><div class="arrow-label">reads for API responses</div></div>
+
+    <div class="section-label">Serving Layer</div>
+    <div class="row">
+      <div class="box serve">
+        <h3>Cloud Run Service (FastAPI)</h3>
+        <p>REST API: /jobs, /sources, /matching<br>Vector search + scoring + ranking</p>
+        <span class="tag">~$0-5/month</span>
+      </div>
+    </div>
+
+    <div class="arrow-down"><div class="arrow-label">recommendations API</div></div>
+
+    <div class="section-label">Consumers (Future)</div>
+    <div class="row">
+      <div class="box future">
+        <h3>VALET</h3>
+        <p>Job application automation<br>Calls /matching/recommendations<br>Creates job leads from results</p>
+        <span class="tag">do not implement yet</span>
+      </div>
+      <div class="box future">
+        <h3>GHOST-HANDS</h3>
+        <p>Browser automation<br>Executes job applications<br>via VALET orchestration</p>
+        <span class="tag">do not implement yet</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== PIPELINE ==================== -->
+<div id="pipeline" class="diagram">
+
+  <h2 style="text-align:center; margin-bottom: 24px; color: #f0f6fc; font-size: 20px;">Ingest Pipeline Flow (per source)</h2>
+
+  <div class="pipeline">
+    <div class="pipeline-step fetch" data-step="1">
+      <span class="step-title">FETCH</span>
+      <span class="step-desc">Call ATS API, get raw job list</span>
+      <span class="step-tech">fetcher.fetch(slug)</span>
+    </div>
+    <div class="pipeline-step map" data-step="2">
+      <span class="step-title">MAP</span>
+      <span class="step-desc">Normalize to unified JobCreate schema</span>
+      <span class="step-tech">mapper.map(raw_job)</span>
+    </div>
+    <div class="pipeline-step dedupe" data-step="3">
+      <span class="step-title">DEDUPE</span>
+      <span class="step-desc">Remove duplicate external_job_ids within snapshot</span>
+      <span class="step-tech">dict[external_job_id] = payload</span>
+    </div>
+    <div class="pipeline-step stage" data-step="4">
+      <span class="step-title">EXISTING MAP</span>
+      <span class="step-desc">Query Firestore: which jobs already exist for this source?</span>
+      <span class="step-tech">db.collection("jobs").where("sourceId", "==", src)</span>
+    </div>
+    <div class="pipeline-step stage" data-step="5">
+      <span class="step-title">STAGE</span>
+      <span class="step-desc">Build insert/update dicts, sync blobs to GCS</span>
+      <span class="step-tech">batch.set() or batch.update()</span>
+    </div>
+    <div class="pipeline-step persist" data-step="6">
+      <span class="step-title">PERSIST</span>
+      <span class="step-desc">Batch write jobs to Firestore (500 per batch)</span>
+      <span class="step-tech">WriteBatch.commit()</span>
+    </div>
+    <div class="pipeline-step persist" data-step="7">
+      <span class="step-title">LOCATION SYNC</span>
+      <span class="step-desc">Parse location hints, resolve via GeoNames, denormalize into job docs</span>
+      <span class="step-tech">batch.update(locations=...)</span>
+    </div>
+    <div class="pipeline-step persist" data-step="8">
+      <span class="step-title">FINALIZE</span>
+      <span class="step-desc">Close jobs not in snapshot: query open + lastSeenAt &lt; syncStart, set closed</span>
+      <span class="step-tech">query + batch.update(status="closed")</span>
+    </div>
+    <div class="pipeline-step enrich" data-step="9">
+      <span class="step-title">PUBLISH</span>
+      <span class="step-desc">Send job IDs to Pub/Sub for async enrichment</span>
+      <span class="step-tech">pubsub.publish("jobs-to-enrich", job_ids)</span>
+    </div>
+    <div class="pipeline-step enrich" data-step="10">
+      <span class="step-title">ENRICH (async)</span>
+      <span class="step-desc">Cloud Run worker: LLM structured JD extraction + embedding generation</span>
+      <span class="step-tech">llm.parse(desc) + embed(text) &rarr; Firestore update</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DATA MODEL ==================== -->
+<div id="data" class="diagram">
+
+  <h2 style="text-align:center; margin-bottom: 24px; color: #f0f6fc; font-size: 20px;">Firestore Collections</h2>
+
+  <div class="model-grid">
+
+    <div class="model-card">
+      <h3>jobs <span style="color:#8b949e; font-size:12px; font-weight:400">~200k documents</span></h3>
+      <div class="field"><span class="field-name">Document ID</span><span class="field-type">{sourceDocId}_{externalJobId} <span class="badge badge-pk">PK</span></span></div>
+      <div class="field"><span class="field-name">sourceId</span><span class="field-type">string <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">title</span><span class="field-type">string</span></div>
+      <div class="field"><span class="field-name">applyUrl</span><span class="field-type">string</span></div>
+      <div class="field"><span class="field-name">status</span><span class="field-type">"open" | "closed" <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">sourcePlatform</span><span class="field-type">string <span class="badge badge-denorm">DENORM</span></span></div>
+      <div class="field"><span class="field-name">locations[]</span><span class="field-type">array&lt;map&gt; <span class="badge badge-denorm">DENORM</span></span></div>
+      <div class="field"><span class="field-name">countryCodes[]</span><span class="field-type">array&lt;string&gt; <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">sponsorshipNotAvailable</span><span class="field-type">string <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">minDegreeRank</span><span class="field-type">number <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">jobDomainNormalized</span><span class="field-type">string <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">structuredJd</span><span class="field-type">map</span></div>
+      <div class="field"><span class="field-name">embedding</span><span class="field-type">vector(768) <span class="badge badge-vec">VEC</span></span></div>
+      <div class="field"><span class="field-name">lastSeenAt</span><span class="field-type">timestamp <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">descriptionHtmlKey</span><span class="field-type">string (GCS pointer)</span></div>
+    </div>
+
+    <div class="model-card">
+      <h3>sources <span style="color:#8b949e; font-size:12px; font-weight:400">~5k documents</span></h3>
+      <div class="field"><span class="field-name">Document ID</span><span class="field-type">{platform}_{identifier} <span class="badge badge-pk">PK</span></span></div>
+      <div class="field"><span class="field-name">name</span><span class="field-type">string</span></div>
+      <div class="field"><span class="field-name">platform</span><span class="field-type">string (enum) <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">identifier</span><span class="field-type">string</span></div>
+      <div class="field"><span class="field-name">enabled</span><span class="field-type">boolean <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">createdAt</span><span class="field-type">timestamp</span></div>
+      <div class="field"><span class="field-name">updatedAt</span><span class="field-type">timestamp</span></div>
+    </div>
+
+    <div class="model-card">
+      <h3>locations <span style="color:#8b949e; font-size:12px; font-weight:400">reference collection</span></h3>
+      <div class="field"><span class="field-name">Document ID</span><span class="field-type">{canonicalKey} <span class="badge badge-pk">PK</span></span></div>
+      <div class="field"><span class="field-name">displayName</span><span class="field-type">string</span></div>
+      <div class="field"><span class="field-name">city</span><span class="field-type">string | null</span></div>
+      <div class="field"><span class="field-name">region</span><span class="field-type">string | null</span></div>
+      <div class="field"><span class="field-name">countryCode</span><span class="field-type">string <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">latitude</span><span class="field-type">number | null</span></div>
+      <div class="field"><span class="field-name">longitude</span><span class="field-type">number | null</span></div>
+      <div class="field"><span class="field-name">geonamesId</span><span class="field-type">number | null</span></div>
+    </div>
+
+    <div class="model-card">
+      <h3>syncRuns <span style="color:#8b949e; font-size:12px; font-weight:400">audit trail</span></h3>
+      <div class="field"><span class="field-name">Document ID</span><span class="field-type">auto-generated <span class="badge badge-pk">PK</span></span></div>
+      <div class="field"><span class="field-name">sourceId</span><span class="field-type">string <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">status</span><span class="field-type">"running"|"success"|"failed" <span class="badge badge-idx">IDX</span></span></div>
+      <div class="field"><span class="field-name">startedAt</span><span class="field-type">timestamp</span></div>
+      <div class="field"><span class="field-name">finishedAt</span><span class="field-type">timestamp | null</span></div>
+      <div class="field"><span class="field-name">stats</span><span class="field-type">map {fetched, mapped, unique, inserted, updated, closed}</span></div>
+      <div class="field"><span class="field-name">errorSummary</span><span class="field-type">string | null</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== COST ==================== -->
+<div id="cost" class="diagram">
+
+  <h2 style="text-align:center; margin-bottom: 8px; color: #f0f6fc; font-size: 20px;">Monthly Cost Comparison</h2>
+  <p style="text-align:center; color: #8b949e; margin-bottom: 24px; font-size: 13px;">200k jobs, 5k daily updates, 1k recommendation queries/day</p>
+
+  <table class="cost-table">
+    <tr>
+      <th>Component</th>
+      <th>Option E: Firestore Only (Recommended)</th>
+      <th>Option B: Firestore + Pinecone</th>
+      <th>Option A: Firestore + Vertex AI</th>
+      <th>Option C: Cloud SQL PostgreSQL</th>
+    </tr>
+    <tr>
+      <td>Database</td>
+      <td>$1-2</td>
+      <td>$1-2</td>
+      <td>$1-2</td>
+      <td>$50-60</td>
+    </tr>
+    <tr>
+      <td>Vector Search</td>
+      <td>Included (native)</td>
+      <td>$0-20 (Pinecone free tier)</td>
+      <td style="color:#f85149; font-weight:600;">$548+ (always-on node)</td>
+      <td>Included (pgvector)</td>
+    </tr>
+    <tr>
+      <td>Blob Storage (GCS)</td>
+      <td>$0.20</td>
+      <td>$0.20</td>
+      <td>$0.20</td>
+      <td>$0.20</td>
+    </tr>
+    <tr>
+      <td>API Hosting (Cloud Run)</td>
+      <td>$0-5</td>
+      <td>$0-5</td>
+      <td>$0-5</td>
+      <td>$0-5</td>
+    </tr>
+    <tr>
+      <td>Batch Processing (Cloud Run Jobs)</td>
+      <td>$2-5</td>
+      <td>$2-5</td>
+      <td>$2-5</td>
+      <td>$2-5</td>
+    </tr>
+    <tr>
+      <td>Pub/Sub</td>
+      <td>$0</td>
+      <td>$0</td>
+      <td>$0</td>
+      <td>$0</td>
+    </tr>
+    <tr>
+      <td>Cloud Scheduler</td>
+      <td>$0.10</td>
+      <td>$0.10</td>
+      <td>$0.10</td>
+      <td>$0.10</td>
+    </tr>
+    <tr class="cost-highlight">
+      <td class="cost-total">TOTAL</td>
+      <td class="cost-total" style="color:#3fb950;">~$5-10/mo</td>
+      <td class="cost-total">~$7-30/mo</td>
+      <td class="cost-total" style="color:#f85149;">~$555/mo</td>
+      <td class="cost-total">~$55-75/mo</td>
+    </tr>
+  </table>
+
+  <div style="margin-top: 30px; padding: 20px; background: #161b22; border: 1px solid #30363d; border-radius: 10px;">
+    <h3 style="color: #f0f6fc; margin-bottom: 12px; font-size: 16px;">Key Insights</h3>
+    <ul style="color: #8b949e; font-size: 13px; line-height: 2; padding-left: 20px;">
+      <li><strong style="color:#f85149;">Vertex AI Vector Search is 98% of Option A's cost</strong> &mdash; a single always-on node at ~$0.75/hr is $548/month. Overkill for 200k vectors.</li>
+      <li><strong style="color:#3fb950;">Firestore native vector search is included</strong> &mdash; no additional cost. Supports 768-dim embeddings with cosine distance.</li>
+      <li><strong style="color:#e3b341;">Pinecone Serverless free tier</strong> covers 2M read units + 5GB storage &mdash; likely sufficient for 200k vectors and 1k queries/day.</li>
+      <li><strong style="color:#58a6ff;">Cloud Run scales to zero</strong> &mdash; you only pay when requests are being served or jobs are running.</li>
+      <li><strong>LLM enrichment cost</strong> (SiliconFlow Qwen) is ~$18 for a full corpus run &mdash; same regardless of architecture choice.</li>
+    </ul>
+  </div>
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.diagram').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

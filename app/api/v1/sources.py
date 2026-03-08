@@ -6,13 +6,9 @@ Provides REST API endpoints for Source management.
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.database import get_session
+from app.core.deps import get_source_service
 from app.models import PlatformType
-from app.repositories.job import JobRepository
-from app.repositories.source import SourceRepository
-from app.repositories.sync_run import SyncRunRepository
 from app.schemas.source import (
     SourceCreate,
     SourceRead,
@@ -34,14 +30,6 @@ from app.services.application.source_service import (
 )
 
 router = APIRouter(prefix="/sources", tags=["sources"])
-
-
-def get_source_service(session: AsyncSession = Depends(get_session)) -> SourceService:
-    """Dependency injection for SourceService."""
-    repository = SourceRepository(session)
-    sync_run_repository = SyncRunRepository(session)
-    job_repository = JobRepository(session)
-    return SourceService(repository, sync_run_repository, job_repository)
 
 
 @router.post(

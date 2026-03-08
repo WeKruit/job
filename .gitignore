@@ -5,6 +5,10 @@ node_modules
 !.env.example
 gcp.env
 
+# Firebase / GCP service account keys
+*-firebase-adminsdk-*.json
+firebase-sa-key.json
+
 /generated/prisma
 notebooks/
 artifacts/

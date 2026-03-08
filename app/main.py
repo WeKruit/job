@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import init_db
 from app.core.logging import configure_logging
 from app.core.monitoring import get_metrics_snapshot, http_metrics
 
@@ -19,7 +18,16 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await init_db()
+    if settings.firestore_credentials_file:
+        from app.infrastructure.firestore_client import get_firestore_client
+
+        client = get_firestore_client()
+        logger.info("Firestore ready (project=%s)", client.project)
+    else:
+        from app.core.database import init_db
+
+        await init_db()
+        logger.info("SQL database initialized")
     yield
     # Shutdown
 
@@ -40,6 +48,32 @@ def _resolve_route_label(request: Request) -> str:
     if isinstance(route_path, str) and route_path:
         return route_path
     return request.url.path
+
+
+# NOTE: FastAPI middleware executes in reverse registration order.
+# enforce_read_only is registered FIRST so that observe_requests (registered
+# SECOND) is the outermost middleware and logs/metrics capture all requests,
+# including those blocked by read-only mode.
+
+
+@app.middleware("http")
+async def enforce_read_only(request: Request, call_next):
+    if settings.read_only_mode and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        # Allow non-API endpoints (health, metrics)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        # Allow read-only POST endpoints (matching is a query, not a mutation)
+        if request.url.path.startswith("/api/v1/matching/"):
+            return await call_next(request)
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "READ_ONLY_MODE is enabled. Set READ_ONLY_MODE=false in .env to allow writes."
+            },
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -93,7 +127,11 @@ async def observe_requests(request: Request, call_next):
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "read_only_mode": str(settings.read_only_mode).lower(),
+        "backend": "firestore" if settings.firestore_credentials_file else "postgres",
+    }
 
 
 @app.get("/metrics")

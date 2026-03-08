@@ -51,7 +51,7 @@ class EmbeddingRefreshService:
     def __init__(
         self,
         *,
-        session: AsyncSession,
+        session: AsyncSession | None = None,
         job_repository: JobRepository | None = None,
         job_embedding_repository: JobEmbeddingRepository | None = None,
         embedding_fn=embed_texts,
@@ -60,8 +60,16 @@ class EmbeddingRefreshService:
         target_resolver=resolve_active_job_embedding_target,
     ) -> None:
         self.session = session
-        self.job_repository = job_repository or JobRepository(session)
-        self.job_embedding_repository = job_embedding_repository or JobEmbeddingRepository(session)
+        if job_repository is None:
+            if session is None:
+                raise ValueError("session or job_repository required")
+            job_repository = JobRepository(session)
+        if job_embedding_repository is None:
+            if session is None:
+                raise ValueError("session or job_embedding_repository required")
+            job_embedding_repository = JobEmbeddingRepository(session)
+        self.job_repository = job_repository
+        self.job_embedding_repository = job_embedding_repository
         self.embedding_fn = embedding_fn
         self.settings_provider = settings_provider
         self.embedding_config_provider = embedding_config_provider
@@ -142,7 +150,8 @@ class EmbeddingRefreshService:
                 failed_jobs += max(0, len(candidates) - upserted)
             except Exception as exc:  # noqa: BLE001
                 failed_jobs += len(candidates)
-                await self.session.rollback()
+                if self.session is not None:
+                    await self.session.rollback()
                 return EmbeddingRefreshExecutionResult(
                     source_id=source_id,
                     snapshot_run_id=snapshot_run_id,
@@ -154,7 +163,8 @@ class EmbeddingRefreshService:
                     error=str(exc),
                 )
 
-        await self.session.commit()
+        if self.session is not None:
+            await self.session.commit()
         return EmbeddingRefreshExecutionResult(
             source_id=source_id,
             snapshot_run_id=snapshot_run_id,

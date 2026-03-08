@@ -34,6 +34,7 @@ from app.services.infra.matching.query import (
     build_sql_prefilter,
     vector_literal,
 )
+from app.services.infra.matching.firestore_query import FirestoreMatchCandidateGateway
 
 
 class MatchServiceError(Exception):
@@ -104,31 +105,43 @@ class MatchExperimentService:
             config=self.embedding_config_provider(),
             dimensions=settings.embedding_dim,
         )
-        user_vec_literal = vector_literal(user_embedding)
-        sql_prefilter, sql_prefilter_params, sql_prefilter_summary = build_sql_prefilter(
-            # fetch_candidates uses $1..$5 for vector + active embedding target fields.
-            # Prefilter params must start after those placeholders.
-            start_index=6,
-            needs_sponsorship=needs_sponsorship,
-            user_degree_rank=user_degree_rank,
-            preferred_country_code=request.preferred_country_code,
-        )
-
-        active_target = self.active_target_resolver(
-            config=self.embedding_config_provider(),
-            embedding_dim=settings.embedding_dim,
-        )
         try:
-            candidate_rows = await self.candidate_gateway.fetch_candidates(
-                user_vec_literal=user_vec_literal,
-                top_k=request.top_k,
-                prefilter_sql=sql_prefilter,
-                prefilter_params=sql_prefilter_params,
-                embedding_kind=active_target.embedding_kind,
-                embedding_target_revision=active_target.embedding_target_revision,
-                embedding_model=active_target.embedding_model,
-                embedding_dim=active_target.embedding_dim,
-            )
+            if isinstance(self.candidate_gateway, FirestoreMatchCandidateGateway):
+                candidate_rows = await self.candidate_gateway.fetch_candidates(
+                    user_embedding=user_embedding,
+                    top_k=request.top_k,
+                    exclude_job_ids=request.exclude_job_ids or None,
+                )
+                sql_prefilter_summary = {
+                    "sponsorship_filter_applied": False,
+                    "degree_filter_applied": False,
+                    "preferred_country_code": request.preferred_country_code,
+                    "user_degree_rank": user_degree_rank,
+                }
+            else:
+                user_vec_literal = vector_literal(user_embedding)
+                sql_prefilter, sql_prefilter_params, sql_prefilter_summary = build_sql_prefilter(
+                    start_index=6,
+                    needs_sponsorship=needs_sponsorship,
+                    user_degree_rank=user_degree_rank,
+                    preferred_country_code=request.preferred_country_code,
+                )
+                active_target = self.active_target_resolver(
+                    config=self.embedding_config_provider(),
+                    embedding_dim=settings.embedding_dim,
+                )
+                candidate_rows = await self.candidate_gateway.fetch_candidates(
+                    user_vec_literal=user_vec_literal,
+                    top_k=request.top_k,
+                    prefilter_sql=sql_prefilter,
+                    prefilter_params=sql_prefilter_params,
+                    embedding_kind=active_target.embedding_kind,
+                    embedding_target_revision=active_target.embedding_target_revision,
+                    embedding_model=active_target.embedding_model,
+                    embedding_dim=active_target.embedding_dim,
+                )
+        except MatchServiceError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise MatchQueryError() from exc
 

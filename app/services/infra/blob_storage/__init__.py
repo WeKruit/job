@@ -24,6 +24,7 @@ from .client import (
     BlobStorageError,
     BlobStorageNotConfiguredError,
     DisabledBlobStorage,
+    NoOpBlobStorage,
 )
 from .supabase import SupabaseBlobStorage
 
@@ -74,6 +75,7 @@ __all__ = [
     "BlobStorageError",
     "BlobStorageNotConfiguredError",
     "DisabledBlobStorage",
+    "NoOpBlobStorage",
     "PreparedBlob",
     "SupabaseBlobStorage",
     "build_description_html_blob",

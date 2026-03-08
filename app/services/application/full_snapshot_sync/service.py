@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from sqlmodel.ext.asyncio.session import AsyncSession
-
 from app.contracts.sync import SourceSyncResult, SourceSyncStats
 from app.ingest.fetchers.base import BaseFetcher
 from app.ingest.mappers.base import BaseMapper
 from app.models import Source, build_source_key
-from app.repositories.job import JobRepository
 from app.services.application.blob.job_blob import JobBlobManager
 
 from .finalize import finalize_snapshot
@@ -27,13 +24,23 @@ class FullSnapshotSyncService:
 
     def __init__(
         self,
-        session: AsyncSession,
-        job_repository: JobRepository | None = None,
+        session=None,
+        job_repository=None,
+        location_repo=None,
+        job_location_repo=None,
         blob_manager: JobBlobManager | None = None,
         blob_sync_concurrency: int = DEFAULT_BLOB_SYNC_CONCURRENCY,
     ):
         self.session = session
-        self.job_repository = job_repository or JobRepository(session)
+        if job_repository is None and session is not None:
+            from app.repositories.job import JobRepository
+
+            job_repository = JobRepository(session)
+        if job_repository is None:
+            raise ValueError("Either session or job_repository must be provided")
+        self.job_repository = job_repository
+        self.location_repo = location_repo
+        self.job_location_repo = job_location_repo
         self.blob_manager = blob_manager or JobBlobManager()
         self.blob_sync_concurrency = max(1, int(blob_sync_concurrency))
 
@@ -82,6 +89,8 @@ class FullSnapshotSyncService:
                 await persist_staged_jobs(job_repository=self.job_repository, staged_jobs=staged_jobs)
                 await sync_staged_job_locations(
                     session=self.session,
+                    location_repo=self.location_repo,
+                    job_location_repo=self.job_location_repo,
                     staged_jobs=staged_jobs,
                     unique_payloads=unique_payloads,
                 )
@@ -104,7 +113,8 @@ class FullSnapshotSyncService:
                 stats=stats,
             )
         except Exception as exc:
-            await self.session.rollback()
+            if self.session is not None:
+                await self.session.rollback()
             stats.failed_count = max(
                 stats.unique_count,
                 stats.mapped_count,

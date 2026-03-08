@@ -1,0 +1,58 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "sync_runs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "started_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source_id", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "last_seen_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source_id", "order": "ASCENDING" },
+        { "fieldPath": "external_job_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "platform", "order": "ASCENDING" },
+        { "fieldPath": "identifier", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "name_normalized", "order": "ASCENDING" },
+        { "fieldPath": "platform", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "job_embeddings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "job_id", "order": "ASCENDING" },
+        { "fieldPath": "embedding_kind", "order": "ASCENDING" },
+        { "fieldPath": "embedding_target_revision", "order": "ASCENDING" },
+        { "fieldPath": "embedding_model", "order": "ASCENDING" },
+        { "fieldPath": "embedding_dim", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

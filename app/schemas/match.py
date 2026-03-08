@@ -89,6 +89,12 @@ class MatchRequest(BaseModel):
         validation_alias=AliasChoices("preferredCountryCode", "preferred_country_code"),
         serialization_alias="preferredCountryCode",
     )
+    exclude_job_ids: list[str] = Field(
+        default_factory=list,
+        description="Job IDs to exclude from results (e.g. already applied/saved/recommended).",
+        validation_alias=AliasChoices("excludeJobIds", "exclude_job_ids"),
+        serialization_alias="excludeJobIds",
+    )
     user_json: str | None = None
 
 

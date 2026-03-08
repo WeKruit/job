@@ -3,14 +3,9 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from sqlalchemy.orm.attributes import instance_state
-
-from app.core.database import get_session
+from app.core.deps import get_job_service
 from app.models import Job, JobStatus, build_source_key
-from app.repositories.job import JobRepository
-from app.repositories.source import SourceRepository
 from app.schemas.location import JobLocationRead
 from app.schemas.job import JobCreate, JobRead, JobUpdate
 from app.services.application.job_service import (
@@ -24,13 +19,6 @@ from app.services.infra.blob_storage import BlobNotFoundError, BlobStorageNotCon
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-def get_job_service(session: AsyncSession = Depends(get_session)) -> JobService:
-    """Dependency injection for JobService with source resolution support."""
-    repository = JobRepository(session)
-    source_repository = SourceRepository(session)
-    return JobService(repository, source_repository=source_repository)
-
-
 async def _map_job_to_read(
     job: Job,
     *,
@@ -41,28 +29,38 @@ async def _map_job_to_read(
     data = job.model_dump()
     data["description_html"] = None
     data["raw_payload"] = {}
-    state = instance_state(job)
-    source_record = state.dict.get("source_record")
-    if source_record is not None:
-        data["source"] = build_source_key(source_record.platform, source_record.identifier)
-    else:
-        data["source"] = None
 
-    if "job_locations" in state.dict:
-        links = state.dict["job_locations"]
-        data["locations"] = [JobLocationRead.model_validate(link).model_dump() for link in links]
-    else:
+    # Try SQLAlchemy instance_state first (SQL path), fall back for Firestore path
+    try:
+        from sqlalchemy.orm.attributes import instance_state
+
+        state = instance_state(job)
+        source_record = state.dict.get("source_record")
+        if source_record is not None:
+            data["source"] = build_source_key(source_record.platform, source_record.identifier)
+        else:
+            data["source"] = None
+        if "job_locations" in state.dict:
+            links = state.dict["job_locations"]
+            data["locations"] = [
+                JobLocationRead.model_validate(link).model_dump() for link in links
+            ]
+        else:
+            data["locations"] = []
+    except Exception:
+        # Firestore path: no SQLAlchemy state
+        data["source"] = None
         data["locations"] = []
 
     if include_blob_content:
         try:
             data["description_html"] = await service.blob_manager.load_description_html(job)
-        except (BlobNotFoundError, BlobStorageNotConfiguredError):
+        except (BlobNotFoundError, BlobStorageNotConfiguredError, Exception):
             data["description_html"] = None
         try:
             raw_payload = await service.blob_manager.load_raw_payload(job)
             data["raw_payload"] = raw_payload if isinstance(raw_payload, dict) else {}
-        except (BlobNotFoundError, BlobStorageNotConfiguredError):
+        except (BlobNotFoundError, BlobStorageNotConfiguredError, Exception):
             data["raw_payload"] = {}
 
     return JobRead.model_validate(data)

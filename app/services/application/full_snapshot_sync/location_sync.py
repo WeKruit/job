@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlmodel.ext.asyncio.session import AsyncSession
-
 from app.models import Job, Location, WorkplaceType
-from app.repositories.job_location import JobLocationRepository
-from app.repositories.location import LocationRepository
 from app.services.domain.location import (
     StructuredLocation,
     build_canonical_key,
@@ -47,15 +43,24 @@ def _is_structured_location_usable(location: StructuredLocation) -> bool:
 
 async def sync_job_location(
     *,
-    session: AsyncSession,
+    session=None,
+    location_repo=None,
+    job_location_repo=None,
     job_id: str,
     structured: StructuredLocation,
     is_primary: bool = False,
     source_raw: str | None = None,
 ) -> Location:
     """Persist one structured location and link it to a job."""
-    loc_repo = LocationRepository(session)
-    job_loc_repo = JobLocationRepository(session)
+    # Build repos from session (SQL path) if explicit repos not provided
+    if location_repo is None:
+        from app.repositories.location import LocationRepository
+
+        location_repo = LocationRepository(session)
+    if job_location_repo is None:
+        from app.repositories.job_location import JobLocationRepository
+
+        job_location_repo = JobLocationRepository(session)
 
     canonical_key = build_canonical_key(
         city=structured.city,
@@ -75,8 +80,8 @@ async def sync_job_location(
         country_code=structured.country_code,
     )
 
-    location = await loc_repo.upsert(location_data)
-    await job_loc_repo.link(
+    location = await location_repo.upsert(location_data)
+    await job_location_repo.link(
         job_id=job_id,
         location_id=location.id,
         is_primary=is_primary,
@@ -132,7 +137,9 @@ def _build_structured_locations(payload: dict[str, Any]) -> list[StructuredLocat
 
 async def sync_staged_job_locations(
     *,
-    session: AsyncSession,
+    session=None,
+    location_repo=None,
+    job_location_repo=None,
     staged_jobs: list[Job],
     unique_payloads: list[dict[str, Any]],
 ) -> None:
@@ -150,6 +157,8 @@ async def sync_staged_job_locations(
             structured = location_payload.structured
             await sync_job_location(
                 session=session,
+                location_repo=location_repo,
+                job_location_repo=job_location_repo,
                 job_id=str(job.id),
                 structured=structured,
                 is_primary=is_primary,

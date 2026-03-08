@@ -14,6 +14,17 @@ router = APIRouter(prefix="/matching", tags=["matching"])
 
 @lru_cache
 def get_match_service() -> MatchExperimentService:
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if settings.firestore_credentials_file:
+        from app.infrastructure.firestore_client import get_firestore_client
+        from app.services.infra.matching.firestore_query import FirestoreMatchCandidateGateway
+
+        db = get_firestore_client()
+        return MatchExperimentService(
+            candidate_gateway=FirestoreMatchCandidateGateway(db),
+        )
     return MatchExperimentService()
 
 
