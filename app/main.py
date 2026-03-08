@@ -50,6 +50,32 @@ def _resolve_route_label(request: Request) -> str:
     return request.url.path
 
 
+# NOTE: FastAPI middleware executes in reverse registration order.
+# enforce_read_only is registered FIRST so that observe_requests (registered
+# SECOND) is the outermost middleware and logs/metrics capture all requests,
+# including those blocked by read-only mode.
+
+
+@app.middleware("http")
+async def enforce_read_only(request: Request, call_next):
+    if settings.read_only_mode and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        # Allow non-API endpoints (health, metrics)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        # Allow read-only POST endpoints (matching is a query, not a mutation)
+        if request.url.path.startswith("/api/v1/matching/"):
+            return await call_next(request)
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "READ_ONLY_MODE is enabled. Set READ_ONLY_MODE=false in .env to allow writes."
+            },
+        )
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def observe_requests(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or uuid4().hex
@@ -97,26 +123,6 @@ async def observe_requests(request: Request, call_next):
         request_id,
     )
     return response
-
-
-@app.middleware("http")
-async def enforce_read_only(request: Request, call_next):
-    if settings.read_only_mode and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        # Allow non-API endpoints (health, metrics)
-        if not request.url.path.startswith("/api/"):
-            return await call_next(request)
-        # Allow read-only POST endpoints (matching is a query, not a mutation)
-        if request.url.path.startswith("/api/v1/matching/"):
-            return await call_next(request)
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(
-            status_code=403,
-            content={
-                "detail": "READ_ONLY_MODE is enabled. Set READ_ONLY_MODE=false in .env to allow writes."
-            },
-        )
-    return await call_next(request)
 
 
 @app.get("/health")

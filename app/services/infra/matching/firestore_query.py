@@ -103,6 +103,10 @@ class FirestoreMatchCandidateGateway:
         Returns rows in the same dict format as the SQL MatchCandidateGateway.
         """
         _DISTANCE_FIELD = "vector_distance"
+        _MAX_FIND_NEAREST_LIMIT = 1000
+        exclude_set = set(exclude_job_ids or [])
+        # Over-fetch to compensate for post-query exclusion filtering
+        fetch_limit = min(top_k + len(exclude_set), _MAX_FIND_NEAREST_LIMIT)
         query = (
             self._db.collection("jobs")
             .where("status", "==", "open")
@@ -110,12 +114,10 @@ class FirestoreMatchCandidateGateway:
                 vector_field="embedding",
                 query_vector=Vector(user_embedding),
                 distance_measure=DistanceMeasure.COSINE,
-                limit=top_k,
+                limit=fetch_limit,
                 distance_result_field=_DISTANCE_FIELD,
             )
         )
-
-        exclude_set = set(exclude_job_ids or [])
 
         # First pass: collect all candidates from vector search
         candidates: list[tuple[str, dict[str, Any], float]] = []

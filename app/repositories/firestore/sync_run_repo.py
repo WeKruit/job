@@ -82,9 +82,23 @@ class FirestoreSyncRunRepository(FirestoreBaseRepository):
     async def try_create_running(self, *, source_id: str | None = None) -> SyncRun | None:
         # Check for existing running sync for this source
         if source_id:
-            existing = await self.get_running_by_source_id(source_id=source_id)
-            if existing is not None:
-                return None
+            # Use a lock document to prevent concurrent syncs for the same source.
+            # create() fails if the document already exists, providing atomicity.
+            lock_ref = self._db.collection("sync_locks").document(f"source_{source_id}")
+            try:
+                await lock_ref.create({"source_id": source_id, "locked_at": utc_now()})
+            except Exception:
+                # Lock document already exists — another sync is running
+                # Verify it's actually still running (not a stale lock)
+                existing = await self.get_running_by_source_id(source_id=source_id)
+                if existing is not None:
+                    return None
+                # Stale lock — delete and retry once
+                await lock_ref.delete()
+                try:
+                    await lock_ref.create({"source_id": source_id, "locked_at": utc_now()})
+                except Exception:
+                    return None
 
         now = utc_now()
         run = SyncRun(
@@ -159,6 +173,10 @@ class FirestoreSyncRunRepository(FirestoreBaseRepository):
         if stats:
             _apply_stats_to_model(run, stats)
         await self.collection.document(run.id).set(_run_to_doc(run))
+        # Release the sync lock if one was acquired
+        if run.source_id:
+            lock_ref = self._db.collection("sync_locks").document(f"source_{run.source_id}")
+            await lock_ref.delete()
         return run
 
 

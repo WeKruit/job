@@ -7,8 +7,6 @@ Otherwise, the legacy SQL path is used.
 
 from __future__ import annotations
 
-from fastapi import Depends
-
 from app.core.config import get_settings
 from app.services.application.job_service import JobService
 from app.services.application.source_service import SourceService
@@ -23,10 +21,6 @@ def get_job_service() -> JobService:
 
         db = get_firestore_client()
         return JobService(FirestoreJobRepository(db), source_repository=FirestoreSourceRepository(db))
-
-    # SQL path: import lazily to avoid requiring postgres deps when using Firestore
-    from app.repositories.job import JobRepository
-    from app.repositories.source import SourceRepository
 
     raise NotImplementedError(
         "SQL-backed JobService requires an async session via Depends(get_session). "
