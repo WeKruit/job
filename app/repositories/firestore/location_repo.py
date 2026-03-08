@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timezone
 
 from google.cloud.firestore_v1.async_client import AsyncClient
 

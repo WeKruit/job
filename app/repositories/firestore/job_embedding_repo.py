@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Sequence
 
 from google.cloud.firestore_v1.async_client import AsyncClient

@@ -36,6 +36,8 @@ class FullSnapshotSyncService:
             from app.repositories.job import JobRepository
 
             job_repository = JobRepository(session)
+        if job_repository is None:
+            raise ValueError("Either session or job_repository must be provided")
         self.job_repository = job_repository
         self.location_repo = location_repo
         self.job_location_repo = job_location_repo

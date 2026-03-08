@@ -17,12 +17,17 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialise Firestore client (validates credentials early)
+    # Startup
     if settings.firestore_credentials_file:
         from app.infrastructure.firestore_client import get_firestore_client
 
         client = get_firestore_client()
         logger.info("Firestore ready (project=%s)", client.project)
+    else:
+        from app.core.database import init_db
+
+        await init_db()
+        logger.info("SQL database initialized")
     yield
     # Shutdown
 
@@ -97,8 +102,11 @@ async def observe_requests(request: Request, call_next):
 @app.middleware("http")
 async def enforce_read_only(request: Request, call_next):
     if settings.read_only_mode and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        # Allow health/metrics endpoints
+        # Allow non-API endpoints (health, metrics)
         if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        # Allow read-only POST endpoints (matching is a query, not a mutation)
+        if request.url.path.startswith("/api/v1/matching/"):
             return await call_next(request)
         from fastapi.responses import JSONResponse
 

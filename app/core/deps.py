@@ -8,37 +8,51 @@ Otherwise, the legacy SQL path is used.
 from __future__ import annotations
 
 from fastapi import Depends
-from google.cloud.firestore_v1.async_client import AsyncClient
 
 from app.core.config import get_settings
-from app.infrastructure.firestore_client import get_firestore_client
-from app.repositories.firestore import (
-    FirestoreJobEmbeddingRepository,
-    FirestoreJobLocationRepository,
-    FirestoreJobRepository,
-    FirestoreLocationRepository,
-    FirestoreSourceRepository,
-    FirestoreSyncRunRepository,
-)
 from app.services.application.job_service import JobService
 from app.services.application.source_service import SourceService
 
 
-def get_db() -> AsyncClient:
-    """Return the Firestore async client."""
-    return get_firestore_client()
+def get_job_service() -> JobService:
+    """Return JobService backed by Firestore or SQL depending on config."""
+    settings = get_settings()
+    if settings.firestore_credentials_file:
+        from app.infrastructure.firestore_client import get_firestore_client
+        from app.repositories.firestore import FirestoreJobRepository, FirestoreSourceRepository
+
+        db = get_firestore_client()
+        return JobService(FirestoreJobRepository(db), source_repository=FirestoreSourceRepository(db))
+
+    # SQL path: import lazily to avoid requiring postgres deps when using Firestore
+    from app.repositories.job import JobRepository
+    from app.repositories.source import SourceRepository
+
+    raise NotImplementedError(
+        "SQL-backed JobService requires an async session via Depends(get_session). "
+        "Use the inline dependency in the route handler or set FIRESTORE_CREDENTIALS_FILE."
+    )
 
 
-def get_job_service(db: AsyncClient = Depends(get_db)) -> JobService:
-    """Firestore-backed JobService."""
-    job_repo = FirestoreJobRepository(db)
-    source_repo = FirestoreSourceRepository(db)
-    return JobService(job_repo, source_repository=source_repo)
+def get_source_service() -> SourceService:
+    """Return SourceService backed by Firestore or SQL depending on config."""
+    settings = get_settings()
+    if settings.firestore_credentials_file:
+        from app.infrastructure.firestore_client import get_firestore_client
+        from app.repositories.firestore import (
+            FirestoreJobRepository,
+            FirestoreSourceRepository,
+            FirestoreSyncRunRepository,
+        )
 
+        db = get_firestore_client()
+        return SourceService(
+            FirestoreSourceRepository(db),
+            FirestoreSyncRunRepository(db),
+            FirestoreJobRepository(db),
+        )
 
-def get_source_service(db: AsyncClient = Depends(get_db)) -> SourceService:
-    """Firestore-backed SourceService."""
-    source_repo = FirestoreSourceRepository(db)
-    sync_run_repo = FirestoreSyncRunRepository(db)
-    job_repo = FirestoreJobRepository(db)
-    return SourceService(source_repo, sync_run_repo, job_repo)
+    raise NotImplementedError(
+        "SQL-backed SourceService requires an async session via Depends(get_session). "
+        "Use the inline dependency in the route handler or set FIRESTORE_CREDENTIALS_FILE."
+    )
