@@ -26,23 +26,27 @@
 VALET already has resume parsing (via GHOST-HANDS or its own parser). Map the parsed resume data into the JobX `CandidateProfile` schema:
 
 ```typescript
+interface CandidateEducation {
+  degree?: string;              // "Bachelor of Science", "Master of Arts", etc.
+  school?: string;
+  fieldOfStudy?: string;        // "Computer Science", "Mechanical Engineering", etc.
+}
+
+interface CandidateWorkHistory {
+  title?: string;               // "Software Engineer", "Product Manager", etc.
+  company?: string;
+  bullets: string[];            // Bullet points from resume
+  description?: string;         // Role description
+  achievements: string[];       // Key achievements
+}
+
 interface CandidateProfile {
-  summary?: string;               // Free-text summary
-  skills: string[];               // Skill keywords
+  summary?: string;               // Free-text summary of the candidate
+  skills: string[];               // Skill keywords (e.g. ["Python", "AWS", "Docker"])
   workAuthorization?: string;     // "us_citizen", "h1b", "opt", "green_card", etc.
-  totalYearsExperience?: number;  // Total years of work experience
-  education: Array<{
-    degree?: string;              // "Bachelor of Science", "Master of Arts", etc.
-    school?: string;
-    fieldOfStudy?: string;        // "Computer Science", "Mechanical Engineering", etc.
-  }>;
-  workHistory: Array<{
-    title?: string;               // "Software Engineer", "Product Manager", etc.
-    company?: string;
-    bullets: string[];            // Bullet points from resume
-    description?: string;         // Role description
-    achievements: string[];       // Key achievements
-  }>;
+  totalYearsExperience?: number;  // Total years of work experience (integer, >= 0)
+  education: CandidateEducation[];
+  workHistory: CandidateWorkHistory[];
 }
 ```
 
@@ -56,24 +60,60 @@ Build a service that:
 3. Calls `POST {JOBX_BASE_URL}/api/v1/matching/recommendations`
 4. Returns the results to the frontend
 
-**Request example:**
+**Full request schema:**
+```typescript
+interface MatchRequest {
+  candidate: CandidateProfile;          // REQUIRED
+
+  // Vector search tuning
+  top_k?: number;                       // How many candidates to fetch from vector search (default: 200, min: 1)
+  top_n?: number;                       // How many final results to return (default: 50, min: 1)
+  min_cosine_score?: number;            // Minimum cosine similarity threshold (default: 0.48, range: 0.0-1.0)
+
+  // Hard filter overrides
+  needs_sponsorship_override?: "auto" | "true" | "false";  // Override sponsorship detection (default: "auto")
+  experience_buffer_years?: number;     // Years of slack allowed in experience matching (default: 1, min: 0)
+
+  // LLM reranking (optional, off by default)
+  enable_llm_rerank?: boolean;          // Enable LLM-based reranking (default: false)
+  llm_top_n?: number;                   // How many results to send through LLM rerank (default: 10, min: 1)
+  llm_concurrency?: number;             // Concurrent LLM calls (default: 3, min: 1)
+  max_user_chars?: number;              // Max chars of user profile sent to LLM (default: 12000, min: 1)
+
+  // Filtering
+  excludeJobIds?: string[];             // Job IDs to exclude (e.g. already seen/applied/saved)
+  preferredCountryCode?: string;        // 2-letter ISO country code, e.g. "US" (uppercase, exactly 2 chars)
+}
+```
+
+**Minimal request example (recommended starting point):**
 ```json
 {
-  "candidate": { ... },
-  "top_k": 50,
+  "candidate": {
+    "summary": "Software engineer with 3 years Python experience",
+    "skills": ["Python", "AWS", "Docker"],
+    "totalYearsExperience": 3,
+    "education": [{"degree": "BS", "fieldOfStudy": "Computer Science"}],
+    "workHistory": [{"title": "Software Engineer", "company": "Acme", "bullets": ["Built REST APIs", "Deployed to AWS"]}]
+  },
   "top_n": 10,
   "min_cosine_score": 0.3,
-  "enable_llm_rerank": false,
   "excludeJobIds": ["job_id_1", "job_id_2"],
   "preferredCountryCode": "US"
 }
 ```
 
 **Key parameters to expose to the user or configure:**
-- `top_n` — how many results to show (default 10)
-- `preferredCountryCode` — filter by country
-- `min_cosine_score` — lower = more results but less relevant (0.3 is generous, 0.48 is stricter)
+- `top_n` — how many results to show (default 50, but 10-20 is reasonable for a UI)
+- `preferredCountryCode` — filter by country (uppercase 2-letter ISO code)
+- `min_cosine_score` — lower = more results but less relevant (0.3 is generous, 0.48 is the default/stricter)
 - `excludeJobIds` — IDs of jobs already seen/applied/saved
+
+**Parameters you probably DON'T need to expose to users:**
+- `top_k` — internal vector recall size, leave at 200
+- `needs_sponsorship_override` — auto-detected from `workAuthorization`
+- `experience_buffer_years` — fine at default of 1
+- LLM rerank params — keep `enable_llm_rerank: false` unless you want AI-powered reranking (slower, costs money)
 
 ### 3. Create Supabase tables for job tracking
 
@@ -180,31 +220,83 @@ JOBX_API_TIMEOUT=30                    # seconds (matching takes ~3s typically)
 
 ---
 
-## JobX Response Fields Reference
+## JobX Response Structure
 
-Each result item in the response:
+The response has two top-level fields: `meta` (pipeline diagnostics) and `results` (the actual job matches).
+
+```typescript
+interface MatchResponse {
+  meta: MatchResponseMeta;
+  results: MatchResultItem[];
+}
+```
+
+### Result Item Fields
+
+Each item in `results`:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `job_id` | string | Firestore document ID — use this as the stable identifier |
-| `source` | string | Format: `platform:identifier` (e.g. `greenhouse:anthropic`) |
+| `source` | string \| null | Format: `platform:identifier` (e.g. `greenhouse:anthropic`) |
 | `title` | string | Job title |
 | `apply_url` | string | Direct application URL |
 | `locations` | array | `[{city, region, country_code, display_name, is_primary, workplace_type}]` |
-| `department` | string | Department name |
-| `team` | string | Team name |
-| `employment_type` | string | e.g. `full_time`, `part_time`, `contract` |
+| `department` | string \| null | Department name |
+| `team` | string \| null | Team name |
+| `employment_type` | string \| null | e.g. `full_time`, `part_time`, `contract` |
 | `cosine_score` | float | Raw vector similarity (0-1, higher = more similar) |
 | `skill_overlap_score` | float | How many user skills match the job (0-1) |
 | `domain_match_score` | float | 1.0 if same domain, 0.5 if related, 0.0 if different |
 | `seniority_match_score` | float | How well seniority levels match (0-1) |
-| `final_score` | float | Weighted composite score (this is the main ranking score) |
 | `experience_gap` | int | Years of experience gap (negative = overqualified) |
-| `penalties` | object | `{experience_penalty, education_penalty, total_penalty}` |
-| `score_breakdown` | object | `{cosine_component, skill_component, domain_component, seniority_component}` |
-| `llm_adjusted_score` | float | Same as final_score unless LLM rerank is enabled |
+| `education_gap` | int | Education level gap |
+| `penalties` | object | `{experience_penalty, education_penalty, total_penalty}` (all floats) |
+| `score_breakdown` | object | `{cosine_component, skill_component, domain_component, seniority_component}` (all floats) |
+| `final_score` | float | Weighted composite score — **this is the main ranking score** |
+| `hard_filter` | object \| null | `{passed: bool, reasons: string[]}` — why a job was/wasn't filtered |
+| `llm_adjusted_score` | float | Same as `final_score` unless LLM rerank is enabled |
+| `llm_recommendation` | string \| null | LLM's recommendation text (only if `enable_llm_rerank: true`) |
+| `llm_reasons` | string[] | LLM's reasoning (only if reranked) |
+| `llm_gaps` | string[] | Skill/experience gaps identified by LLM |
+| `llm_resume_focus_points` | string[] | Resume improvement suggestions from LLM |
+| `llm_adjustment` | float | Score adjustment from LLM (default 0.0) |
+| `llm_enriched` | bool | Whether this result was LLM-reranked (default false) |
 
-**For display purposes**, `final_score` is the primary ranking metric. You could display it as a percentage (e.g. `final_score * 100 = "72% match"`).
+### Meta Fields (for debugging/analytics, not needed for basic UI)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `needs_sponsorship` | bool | Whether the user needs visa sponsorship |
+| `user_total_years_experience` | int \| null | Detected years of experience |
+| `user_degree_rank` | int | Education level rank |
+| `user_skill_count` | int | Number of skills detected |
+| `user_domain` | string | Detected professional domain |
+| `user_seniority` | string \| null | Detected seniority level |
+| `top_k` | int | Vector recall size used |
+| `top_n` | int | Max results requested |
+| `results_returned` | int | Actual number of results returned |
+| `candidates_after_sql_prefilter` | int | Candidates after initial filter |
+| `candidates_after_vector_threshold` | int | Candidates after cosine threshold |
+| `candidates_after_hard_filter` | int | Candidates after hard filters |
+
+**For display purposes**, `final_score` is the primary ranking metric. Display it as a percentage: `Math.round(final_score * 100) + "% match"`.
+
+### Scoring Formula
+
+```
+final_score = 0.70 * cosine + 0.15 * skill_overlap + 0.10 * domain_match + 0.05 * seniority_match - penalties
+```
+
+---
+
+## Error Responses
+
+| Status | When | Response Body |
+|--------|------|---------------|
+| 200 | Success | `{ meta: {...}, results: [...] }` |
+| 422 | Validation error (bad request body) | Standard FastAPI validation error |
+| 503 | Embedding service (SiliconFlow) or LLM rerank unavailable | `{ detail: { code: "...", message: "..." } }` |
 
 ---
 
@@ -214,14 +306,15 @@ Each result item in the response:
 2. **Empty skills list** — Matching still works (uses summary + work history for embedding) but quality degrades. Prompt user to add skills.
 3. **0 results returned** — Lower `min_cosine_score` (try 0.2) or increase `top_k`. Could also mean no jobs match the user's domain at all.
 4. **Job no longer exists** — A saved/applied job might get `status=closed` in JobX. Consider periodically checking saved jobs are still open (call JobX jobs API or just note "this job may no longer be available").
-5. **Large excludeJobIds list** — If a user has been recommended hundreds of jobs, the exclusion list grows. This is fine — it's filtered client-side after vector recall. But if `top_k` minus excluded count is very small, increase `top_k` proportionally.
-6. **Rate limiting** — JobX's matching endpoint does an external API call to SiliconFlow for embedding. If SiliconFlow is rate-limited, the request will fail with a 503. Implement retry with backoff on VALET's side.
+5. **Large excludeJobIds list** — If a user has been recommended hundreds of jobs, the exclusion list grows. This is fine — JobX over-fetches from vector search to compensate. But if `top_k` minus excluded count is very small, increase `top_k` proportionally.
+6. **Rate limiting** — JobX's matching endpoint calls SiliconFlow for embedding. If rate-limited, the request fails with 503. Implement retry with backoff on VALET's side.
+7. **Timeout** — Matching typically takes ~3 seconds. Set a 30-second timeout. If it times out, show an error and let the user retry.
 
 ---
 
 ## Deployment Notes
 
-- JobX currently runs locally (`uvicorn app.main:app --port 8000`)
+- JobX currently runs locally: `uvicorn app.main:app --port 8000`
 - For production, JobX will need to be deployed (Cloud Run or similar)
 - The Firestore service account JSON must be available to the deployed instance
 - VALET needs network access to JobX's deployed URL
@@ -231,7 +324,7 @@ Each result item in the response:
 
 ## Testing the Integration
 
-You can test the JobX API directly:
+Test the JobX API directly:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/matching/recommendations \
@@ -251,3 +344,10 @@ curl -X POST http://localhost:8000/api/v1/matching/recommendations \
 ```
 
 Expected: 200 OK with 5 ranked Anthropic job results in ~3 seconds.
+
+**Verify the response shape:**
+- `response.results` is an array of `MatchResultItem`
+- `response.results[0].job_id` is a string you'll use as the stable ID
+- `response.results[0].final_score` is the ranking score (0-1)
+- `response.results[0].apply_url` is the link to open when the user clicks "Apply"
+- `response.meta.results_returned` tells you how many results came back
